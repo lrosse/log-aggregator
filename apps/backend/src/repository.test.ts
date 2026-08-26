@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { buildWhere } from './repository.js';
+import { describe, expect, it, vi } from 'vitest';
+import type { Pool } from 'pg';
+import { buildWhere, createRepository } from './repository.js';
+
+describe('database readiness', () => {
+  it('probes the migrated logs table and accepts an empty database', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const repository = createRepository({ query } as unknown as Pool);
+    expect(await repository.healthy()).toBe(true);
+    expect(query).toHaveBeenCalledWith('SELECT 1 FROM logs LIMIT 1');
+  });
+  it('reports a failed database probe without exposing the error', async () => {
+    const query = vi.fn().mockRejectedValue(new Error('private connection details'));
+    const repository = createRepository({ query } as unknown as Pool);
+    expect(await repository.healthy()).toBe(false);
+  });
+});
 
 describe('SQL filters', () => {
   it('uses a numeric keyset predicate with all filters', () => {

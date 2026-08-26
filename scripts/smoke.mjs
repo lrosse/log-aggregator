@@ -38,8 +38,10 @@ async function post(body, expected = 201) {
   assert.equal(response.status, expected, 'POST /logs');
   return response.json();
 }
-assert.equal((await get('/health')).status, 'ok');
-assert.equal((await fetch(`${web}/api/health`)).status, 200, 'nginx API proxy');
+assert.deepEqual(await get('/health'), { status: 'ok', db: 'connected' });
+const proxiedHealth = await fetch(`${web}/api/health`);
+assert.equal(proxiedHealth.status, 200, 'nginx API proxy');
+assert.deepEqual(await proxiedHealth.json(), { status: 'ok', db: 'connected' });
 const html = await (await fetch(web)).text();
 assert.match(html, /<title>Log Aggregator · Explorer<\/title>/);
 assert.match(html, /property="og:title"\s+content="Log Aggregator · Explorer"/);

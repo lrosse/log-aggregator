@@ -71,6 +71,22 @@ describe('POST /logs', () => {
   });
 });
 
+describe('GET /health', () => {
+  it('confirms API and PostgreSQL readiness without caching the result', async () => {
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: 'ok', db: 'connected' });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(repository.healthy).toHaveBeenCalledOnce();
+  });
+  it('returns service unavailable when PostgreSQL is not ready', async () => {
+    vi.mocked(repository.healthy).mockResolvedValue(false);
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ status: 'unavailable', db: 'disconnected' });
+  });
+});
+
 describe('read API', () => {
   it('combines filters and caps the requested window', async () => {
     const response = await request(app)
@@ -92,11 +108,8 @@ describe('read API', () => {
       expect(repository.list).not.toHaveBeenCalled();
     },
   );
-  it('lists services and reports unavailable storage', async () => {
+  it('lists services', async () => {
     expect((await request(app).get('/services')).body).toEqual({ services: ['payments'] });
-    expect((await request(app).get('/health')).status).toBe(200);
-    vi.mocked(repository.healthy).mockResolvedValue(false);
-    expect((await request(app).get('/health')).status).toBe(503);
   });
   it('uses one extra row to return a stable older-page cursor', async () => {
     vi.mocked(repository.list).mockResolvedValue([

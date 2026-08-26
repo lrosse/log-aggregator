@@ -126,7 +126,13 @@ GET /logs?service=payments&level=error&q=timeout&limit=50
 
 Filters are optional and combined with AND. `limit` defaults to 100 and accepts integers from 1 to 200. Responses contain `{ "logs": [...], "nextCursor": "123" }`, newest ingestion first. Request the next page with `before=123`, keeping the same filters and limit. `nextCursor: null` means there are no older matching records. Cursors are positive PostgreSQL BIGINT strings, never floating-point numbers. Each record adds string `id` and UTC `receivedAt` to the input fields. SQL parameters and escaped LIKE metacharacters protect search queries.
 
-`GET /services` returns `{ "services": ["api-gateway", ...] }` alphabetically. `GET /health` returns `200 {"status":"ok"}` only when the logs table is reachable, otherwise `503`.
+`GET /services` returns `{ "services": ["api-gateway", ...] }` alphabetically.
+
+### Health check
+
+`GET /health` returns **200** with `{ "status": "ok", "db": "connected" }` only after a PostgreSQL query confirms the migrated logs table is reachable. An empty table is healthy. If the database is unavailable, it returns **503** with `{ "status": "unavailable", "db": "disconnected" }`, without connection details. Responses use `Cache-Control: no-store`.
+
+Use [localhost:3001/health](http://localhost:3001/health) directly or `/api/health` through the dashboard's nginx proxy. Docker Compose uses this readiness endpoint to coordinate startup and monitor the API.
 
 ## Configuration
 
@@ -159,7 +165,7 @@ The smoke test inserts marked synthetic events into the existing demo services a
 
 See the [verification record](docs/verification.md) for the browser, persistence and restart checks and the limits of what was tested.
 
-The 47 tests cover ingest validation, malformed/oversized requests, safe errors, SQL parameters, literal search, cursor bounds, actual WebSocket delivery/origin rejection, combined UI filters, empty results, retry, live updates, reconnect reconciliation, stale-request cancellation, pagination resets and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering across numeric ID boundaries, pagination during new arrivals, all four generated services and Socket.io over the nginx WebSocket proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
+The automated tests cover ingest validation, malformed/oversized requests, safe errors, database readiness, SQL parameters, literal search, cursor bounds, actual WebSocket delivery/origin rejection, combined UI filters, first-log guidance, loading states, empty results, retry, live updates, reconnect reconciliation, stale-request cancellation, pagination resets and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering across numeric ID boundaries, pagination during new arrivals, all four generated services, health responses, page metadata, the favicon and Socket.io over the nginx WebSocket proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
 
 For frontend hot reload, keep the Compose API on port 3001 and run `npm run dev -w @log-aggregator/frontend`, then open [localhost:5173](http://localhost:5173). Vite proxies `/api` to the backend. For backend-only development, set `DATABASE_URL` to your development PostgreSQL instance and run `npm run dev -w @log-aggregator/backend`; migrations run on startup.
 

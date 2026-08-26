@@ -11,7 +11,10 @@ export function createApp(repository: LogRepository, onStored: (log: LogRecord) 
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', async (_request, response) => {
     const healthy = await repository.healthy();
-    response.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'unavailable' });
+    response
+      .set('Cache-Control', 'no-store')
+      .status(healthy ? 200 : 503)
+      .json({ status: healthy ? 'ok' : 'unavailable', db: healthy ? 'connected' : 'disconnected' });
   });
   app.post('/logs', async (request, response) => {
     if (!request.is('application/json')) {
