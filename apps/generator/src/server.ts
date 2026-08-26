@@ -1,5 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createEvent } from './events.js';
 
 const endpoint = new URL('/logs', process.env.API_URL ?? 'http://backend:3001');
@@ -24,7 +26,7 @@ while (!controller.signal.aborted) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     failures = 0;
     sequence += 1;
-    await writeFile('/tmp/generator-heartbeat', String(Date.now()));
+    await writeFile(join(tmpdir(), 'generator-heartbeat'), String(Date.now()));
     if (sequence % 20 === 0) console.info(JSON.stringify({ event: 'logs_generated', count: sequence }));
   } catch {
     if (controller.signal.aborted) break;

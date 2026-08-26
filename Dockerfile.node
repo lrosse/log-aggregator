@@ -6,19 +6,21 @@ COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY apps/generator/package.json ./apps/generator/package.json
 RUN npm ci
 
+FROM dependencies AS production-dependencies
+RUN npm prune --omit=dev --offline --no-audit --no-fund
+
 FROM dependencies AS build
 ARG APP
 COPY tsconfig.base.json ./
 COPY apps/${APP} ./apps/${APP}
 RUN npm run build --workspace=apps/${APP}
-RUN npm prune --omit=dev
 
 FROM node:24-alpine AS runtime
 ARG APP
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=production-dependencies /app/node_modules ./node_modules
 COPY --from=build /app/apps/${APP}/dist ./dist
 COPY apps/backend/migrations ./migrations
 USER node

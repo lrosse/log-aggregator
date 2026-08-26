@@ -35,7 +35,7 @@ export function createRepository(pool: Pool): LogRepository {
     async list(filter) {
       const where = buildWhere(filter);
       const result = await pool.query<DatabaseLog>(
-        `SELECT ${columns} FROM logs ${where.sql} ORDER BY id DESC LIMIT $${where.values.length + 1}`,
+        `SELECT ${columns} FROM logs ${where.sql} ORDER BY logs.id DESC LIMIT $${where.values.length + 1}`,
         [...where.values, filter.limit],
       );
       return result.rows.map(serialize);

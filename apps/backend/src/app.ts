@@ -35,12 +35,10 @@ export function createApp(repository: LogRepository) {
   });
   const errors: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
     if (error instanceof ZodError) {
-      response
-        .status(400)
-        .json({
-          error: 'Validation failed',
-          issues: error.issues.map(({ path, message }) => ({ path, message })),
-        });
+      response.status(400).json({
+        error: 'Validation failed',
+        issues: error.issues.map(({ path, message }) => ({ path, message })),
+      });
       return;
     }
     const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
