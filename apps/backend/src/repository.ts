@@ -10,6 +10,7 @@ export function buildWhere(filter: LogFilter) {
   };
   if (filter.service) add('service', filter.service);
   if (filter.level) add('level', filter.level);
+  if (filter.before) add('logs.id', filter.before, '<');
   // Search is a literal substring, so SQL LIKE wildcards must be escaped.
   if (filter.q) add('message', `%${filter.q.replace(/[\\%_]/g, '\\$&')}%`, 'ILIKE');
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };

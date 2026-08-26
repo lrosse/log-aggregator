@@ -24,8 +24,9 @@ export function createApp(repository: LogRepository) {
   });
   app.get('/logs', async (request, response) => {
     const filter = logFilterSchema.parse(request.query);
-    const logs = await repository.list(filter);
-    response.json({ logs });
+    const rows = await repository.list({ ...filter, limit: filter.limit + 1 });
+    const logs = rows.slice(0, filter.limit);
+    response.json({ logs, nextCursor: rows.length > filter.limit ? logs.at(-1)!.id : null });
   });
   app.get('/services', async (_request, response) => {
     response.json({ services: await repository.services() });

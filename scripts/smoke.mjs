@@ -60,6 +60,16 @@ assert.equal(
 const limited = await get('/logs?limit=2');
 assert.equal(limited.logs.length, 2);
 assert.ok(BigInt(limited.logs[0].id) > BigInt(limited.logs[1].id), 'ingestion ordering');
+const firstPage = await get(`/logs?${new URLSearchParams({ q: marker, limit: '2' })}`);
+assert.ok(firstPage.nextCursor);
+const newArrival = await post({ ...input, message: `${marker} new arrival` });
+const secondPage = await get(
+  `/logs?${new URLSearchParams({ q: marker, limit: '2', before: firstPage.nextCursor })}`,
+);
+assert.equal(secondPage.nextCursor, null);
+const pagedIds = [...firstPage.logs, ...secondPage.logs].map((log) => log.id);
+assert.equal(new Set(pagedIds).size, 3, 'no duplicate or skipped records across pages');
+assert.ok(!pagedIds.includes(newArrival.id), 'new arrivals do not shift older pages');
 const window = await get('/logs?limit=200');
 assert.ok(
   window.logs.every((log, index) => index === 0 || BigInt(window.logs[index - 1].id) > BigInt(log.id)),

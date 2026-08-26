@@ -25,5 +25,12 @@ export const logFilterSchema = z
     level: level.optional(),
     q: z.string().trim().max(200).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(100),
+    before: z
+      .string()
+      .refine(
+        (value) => /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n,
+        'Invalid cursor',
+      )
+      .optional(),
   })
   .strict();

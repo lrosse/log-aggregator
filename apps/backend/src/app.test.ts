@@ -75,7 +75,7 @@ describe('read API', () => {
       service: 'payments',
       level: 'error',
       q: 'timeout',
-      limit: 25,
+      limit: 26,
     });
     expect(response.body.logs).toEqual([record]);
   });
@@ -92,4 +92,24 @@ describe('read API', () => {
     vi.mocked(repository.healthy).mockResolvedValue(false);
     expect((await request(app).get('/health')).status).toBe(503);
   });
+  it('uses one extra row to return a stable older-page cursor', async () => {
+    vi.mocked(repository.list).mockResolvedValue([
+      { ...record, id: '9' },
+      { ...record, id: '8' },
+      { ...record, id: '7' },
+    ]);
+    const response = await request(app).get('/logs?limit=2&before=10');
+    expect(response.body.logs.map((log: LogRecord) => log.id)).toEqual(['9', '8']);
+    expect(response.body.nextCursor).toBe('8');
+    expect(repository.list).toHaveBeenCalledWith({ limit: 3, before: '10' });
+  });
+  it('returns no cursor at the end of the result set', async () => {
+    expect((await request(app).get('/logs')).body.nextCursor).toBeNull();
+  });
+  it.each(['-1', '0', '1.5', 'abc', '9223372036854775808', '1 OR 1=1'])(
+    'rejects cursor %s',
+    async (before) => {
+      expect((await request(app).get('/logs').query({ before })).status).toBe(400);
+    },
+  );
 });

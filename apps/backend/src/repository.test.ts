@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { buildWhere } from './repository.js';
 
 describe('SQL filters', () => {
+  it('uses a numeric keyset predicate with all filters', () => {
+    expect(
+      buildWhere({ service: 'payments', level: 'warn', before: '9007199254740993', q: 'slow', limit: 100 }),
+    ).toEqual({
+      sql: 'WHERE service = $1 AND level = $2 AND logs.id < $3 AND message ILIKE $4',
+      values: ['payments', 'warn', '9007199254740993', '%slow%'],
+    });
+  });
   it('builds an unfiltered query', () => {
     expect(buildWhere({ limit: 100 })).toEqual({ sql: '', values: [] });
   });

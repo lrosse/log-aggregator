@@ -13,6 +13,7 @@ export interface LogRecord extends LogInput {
 }
 
 export interface LogFilter {
+  before?: string;
   service?: string;
   level?: Level;
   q?: string;
