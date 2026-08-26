@@ -6,7 +6,9 @@ export async function migrate(pool: Pool) {
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(87341021)');
-    await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+    await client.query(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())',
+    );
     const directory = new URL('../migrations/', import.meta.url);
     const files = (await readdir(directory)).filter((name) => name.endsWith('.sql')).sort();
     for (const name of files) {
@@ -19,5 +21,7 @@ export async function migrate(pool: Pool) {
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
-  } finally { client.release(); }
+  } finally {
+    client.release();
+  }
 }

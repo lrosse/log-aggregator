@@ -17,7 +17,11 @@ export function buildWhere(filter: LogFilter) {
 
 type DatabaseLog = Omit<LogRecord, 'timestamp' | 'receivedAt'> & { timestamp: Date; receivedAt: Date };
 const columns = 'id::text, service, level, message, timestamp, received_at AS "receivedAt"';
-const serialize = (row: DatabaseLog): LogRecord => ({ ...row, timestamp: row.timestamp.toISOString(), receivedAt: row.receivedAt.toISOString() });
+const serialize = (row: DatabaseLog): LogRecord => ({
+  ...row,
+  timestamp: row.timestamp.toISOString(),
+  receivedAt: row.receivedAt.toISOString(),
+});
 
 export function createRepository(pool: Pool): LogRepository {
   return {
@@ -37,12 +41,18 @@ export function createRepository(pool: Pool): LogRepository {
       return result.rows.map(serialize);
     },
     async services() {
-      const result = await pool.query<{ service: string }>('SELECT DISTINCT service FROM logs ORDER BY service');
+      const result = await pool.query<{ service: string }>(
+        'SELECT DISTINCT service FROM logs ORDER BY service',
+      );
       return result.rows.map((row) => row.service);
     },
     async healthy() {
-      try { await pool.query('SELECT 1 FROM logs LIMIT 1'); return true; }
-      catch { return false; }
+      try {
+        await pool.query('SELECT 1 FROM logs LIMIT 1');
+        return true;
+      } catch {
+        return false;
+      }
     },
   };
 }

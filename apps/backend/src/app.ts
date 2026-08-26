@@ -30,10 +30,17 @@ export function createApp(repository: LogRepository) {
   app.get('/services', async (_request, response) => {
     response.json({ services: await repository.services() });
   });
-  app.use((_request, response) => { response.status(404).json({ error: 'Not found' }); });
+  app.use((_request, response) => {
+    response.status(404).json({ error: 'Not found' });
+  });
   const errors: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
     if (error instanceof ZodError) {
-      response.status(400).json({ error: 'Validation failed', issues: error.issues.map(({ path, message }) => ({ path, message })) });
+      response
+        .status(400)
+        .json({
+          error: 'Validation failed',
+          issues: error.issues.map(({ path, message }) => ({ path, message })),
+        });
       return;
     }
     const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
@@ -42,7 +49,9 @@ export function createApp(repository: LogRepository) {
       return;
     }
     // Never log request bodies: logs submitted by users may contain sensitive data.
-    console.error(JSON.stringify({ event: 'request_failed', type: error instanceof Error ? error.name : 'UnknownError' }));
+    console.error(
+      JSON.stringify({ event: 'request_failed', type: error instanceof Error ? error.name : 'UnknownError' }),
+    );
     response.status(500).json({ error: 'Internal server error' });
   };
   app.use(errors);

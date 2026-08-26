@@ -12,6 +12,8 @@ describe('SQL filters', () => {
     });
   });
   it('treats %, _ and backslash as literal search characters', () => {
-    expect(buildWhere({ q: '100% cache_key\\path', limit: 100 }).values).toEqual(['%100\\% cache\\_key\\\\path%']);
+    expect(buildWhere({ q: '100% cache_key\\path', limit: 100 }).values).toEqual([
+      '%100\\% cache\\_key\\\\path%',
+    ]);
   });
 });
