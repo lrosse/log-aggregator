@@ -6,6 +6,23 @@ import { io } from 'socket.io-client';
 const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3001';
 const web = process.env.SMOKE_WEB_URL ?? 'http://127.0.0.1:3000';
 const marker = `smoke-${randomUUID()}`;
+
+async function waitUntilReady(url) {
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      await response.arrayBuffer();
+      if (response.ok) return;
+    } catch {
+      /* A restart can briefly close connections before the next health probe. */
+    }
+    await delay(250);
+  }
+  assert.fail(`Service did not become ready within 20 seconds: ${url}`);
+}
+
+await Promise.all([waitUntilReady(`${base}/health`), waitUntilReady(`${web}/api/health`)]);
 async function get(path) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(10000) });
   assert.equal(response.status, 200, `GET ${path}`);
