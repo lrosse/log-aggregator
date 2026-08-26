@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run check
+      - run: docker compose up --build -d --wait --wait-timeout 180
+      - run: npm run smoke
+      - name: Container diagnostics
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Cleanup isolated CI stack
+        if: always()
+        run: docker compose down -v
