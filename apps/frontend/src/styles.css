@@ -550,7 +550,7 @@ kbd {
 }
 .table-scroll {
   overflow: auto;
-  max-height: calc(100vh - 477px);
+  max-height: calc(100dvh - 635px);
   min-height: 230px;
   scrollbar-width: thin;
   scrollbar-color: #48523c transparent;
@@ -850,7 +850,7 @@ td:last-child {
     font-size: 11px;
   }
   .table-scroll {
-    max-height: calc(100vh - 486px);
+    max-height: calc(100dvh - 640px);
   }
   td {
     height: 42px;
@@ -918,7 +918,7 @@ td:last-child {
     padding-right: 12px;
   }
   .table-scroll {
-    max-height: calc(100vh - 510px);
+    max-height: calc(100dvh - 665px);
   }
   .query-line > span {
     display: none;
