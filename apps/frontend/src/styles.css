@@ -37,7 +37,7 @@ button {
   color: inherit;
 }
 button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.6;
 }
 button:focus-visible,
@@ -822,6 +822,20 @@ td:last-child {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+.stream-actions,
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pagination > span {
+  margin-right: 6px;
+}
+.badge-live {
+  color: #bdd59d;
+  border-color: #51603b;
+  background: #29331e;
 }
 .spin {
   animation: spin 1s linear infinite;

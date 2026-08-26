@@ -1,7 +1,6 @@
-import { createServer } from 'node:http';
 import pg from 'pg';
 import { z } from 'zod';
-import { createApp } from './app.js';
+import { createHttpServer } from './http.js';
 import { migrate } from './migrate.js';
 import { createRepository } from './repository.js';
 
@@ -9,6 +8,9 @@ const config = z
   .object({
     DATABASE_URL: z.string().min(1),
     PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+    ALLOWED_ORIGINS: z
+      .string()
+      .default('http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173'),
   })
   .parse(process.env);
 const pool = new pg.Pool({
@@ -23,7 +25,10 @@ pool.on('error', () => {
 
 try {
   await migrate(pool);
-  const server = createServer(createApp(createRepository(pool)));
+  const { server, io } = createHttpServer(
+    createRepository(pool),
+    config.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()),
+  );
   server.listen(config.PORT, '0.0.0.0', () => {
     console.info(JSON.stringify({ event: 'listening', port: config.PORT }));
   });
@@ -33,7 +38,7 @@ try {
     closing = true;
     const timeout = setTimeout(() => process.exit(1), 10000);
     timeout.unref();
-    server.close(() => {
+    void io.close(() => {
       void pool.end().then(() => {
         clearTimeout(timeout);
       });

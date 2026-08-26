@@ -1,8 +1,26 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
+
+const realtime = vi.hoisted(() => ({
+  sockets: [] as { listeners: Map<string, () => void>; disconnected: boolean }[],
+}));
+vi.mock('socket.io-client', () => ({
+  io: () => {
+    const state = { listeners: new Map<string, () => void>(), disconnected: false };
+    realtime.sockets.push(state);
+    return {
+      on: (event: string, listener: () => void) => state.listeners.set(event, listener),
+      connect: () => {},
+      removeAllListeners: () => state.listeners.clear(),
+      disconnect: () => {
+        state.disconnected = true;
+      },
+    };
+  },
+}));
 
 const log = {
   id: '1',
@@ -14,6 +32,7 @@ const log = {
 };
 const fetchMock = vi.fn();
 beforeEach(() => {
+  realtime.sockets.length = 0;
   // jsdom has no native dialog implementation; browsers are checked separately.
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true;
@@ -27,7 +46,7 @@ beforeEach(() => {
     json: async () =>
       path.includes('/services')
         ? { services: ['payments', 'api-gateway'] }
-        : { logs: path.includes('q=missing') ? [] : [log] },
+        : { logs: path.includes('q=missing') ? [] : [log], nextCursor: null },
   }));
 });
 afterEach(() => {
@@ -70,4 +89,93 @@ it('shows backend failures and retries successfully', async () => {
   await user.click(screen.getByRole('button', { name: 'Try again' }));
   await screen.findByRole('button', { name: 'Payment timeout' });
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('refreshes filtered results after a socket event and catches up on reconnect', async () => {
+  render(<App />);
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  let message = 'New live event';
+  fetchMock.mockImplementation(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path.includes('/services')
+        ? { services: ['payments'] }
+        : { logs: [{ ...log, message }], nextCursor: null },
+  }));
+  await act(async () => {
+    realtime.sockets.at(-1)!.listeners.get('logs:created')!();
+  });
+  await screen.findByRole('button', { name: 'New live event' });
+  message = 'Recovered after reconnect';
+  await act(async () => {
+    realtime.sockets.at(-1)!.listeners.get('connect')!();
+  });
+  await screen.findByRole('button', { name: 'Recovered after reconnect' });
+  expect(screen.getByRole('status').textContent).toBe('LIVE');
+});
+
+it('pauses for historical pages and resumes at the latest page', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path.includes('/services')
+        ? { services: ['payments'] }
+        : path.includes('before=10')
+          ? { logs: [{ ...log, id: '9', message: 'Older event' }], nextCursor: null }
+          : { logs: [log], nextCursor: '10' },
+  }));
+  render(<App />);
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  const original = realtime.sockets[0]!;
+  await user.click(screen.getByRole('button', { name: 'Older logs' }));
+  await screen.findByRole('button', { name: 'Older event' });
+  expect(screen.getByText('Page 2')).toBeTruthy();
+  expect(original.disconnected).toBe(true);
+  expect((screen.getByRole('button', { name: 'Older logs' }) as HTMLButtonElement).disabled).toBe(true);
+  await user.click(screen.getByRole('button', { name: 'Resume live' }));
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  expect(screen.getByText('Page 1')).toBeTruthy();
+  expect(realtime.sockets).toHaveLength(2);
+});
+
+it('discards a late response after the query changes', async () => {
+  const user = userEvent.setup();
+  let resolveOld: (value: unknown) => void = () => {};
+  fetchMock.mockImplementation(async (path: string) => {
+    if (path.includes('/services')) return { ok: true, json: async () => ({ services: ['payments'] }) };
+    if (path.includes('q=current'))
+      return {
+        ok: true,
+        json: async () => ({ logs: [{ ...log, message: 'Current result' }], nextCursor: null }),
+      };
+    return new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+  });
+  render(<App />);
+  await user.type(screen.getByLabelText('Search log messages'), 'current');
+  await screen.findByRole('button', { name: 'Current result' });
+  await act(async () => {
+    resolveOld({ ok: true, json: async () => ({ logs: [log], nextCursor: null }) });
+  });
+  expect(screen.queryByRole('button', { name: 'Payment timeout' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Current result' })).toBeTruthy();
+});
+
+it('does not restore stale history when filters are cleared', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path.includes('/services') ? { services: ['payments'] } : { logs: [log], nextCursor: '10' },
+  }));
+  render(<App />);
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  await user.click(screen.getByRole('button', { name: 'Older logs' }));
+  await screen.findByText('Page 2');
+  await user.selectOptions(screen.getByLabelText('Filter by service'), 'payments');
+  await screen.findByText('Page 1');
+  await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(screen.getByText('Page 1')).toBeTruthy();
 });

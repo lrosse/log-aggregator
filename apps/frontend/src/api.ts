@@ -21,7 +21,10 @@ export function queryString(filters: Filters) {
 }
 
 export async function readJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api${path}`, { signal });
+  const timeout = AbortSignal.timeout(10000);
+  const response = await fetch(`/api${path}`, {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
   if (!response.ok)
     throw new Error(`Request failed (${response.status}). Check that the backend is running, then retry.`);
   return response.json() as Promise<T>;

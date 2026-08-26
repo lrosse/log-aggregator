@@ -1,10 +1,10 @@
 import express, { type ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import { ZodError } from 'zod';
-import type { LogRepository } from './types.js';
+import type { LogRecord, LogRepository } from './types.js';
 import { logFilterSchema, logInputSchema } from './validation.js';
 
-export function createApp(repository: LogRepository) {
+export function createApp(repository: LogRepository, onStored: (log: LogRecord) => void = () => {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -20,6 +20,7 @@ export function createApp(repository: LogRepository) {
     }
     const input = logInputSchema.parse(request.body);
     const log = await repository.insert(input);
+    onStored(log);
     response.status(201).json(log);
   });
   app.get('/logs', async (request, response) => {

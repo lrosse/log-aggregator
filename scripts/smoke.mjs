@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { io } from 'socket.io-client';
 
 const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3001';
 const web = process.env.SMOKE_WEB_URL ?? 'http://127.0.0.1:3000';
@@ -96,6 +97,23 @@ for (const service of expectedServices) {
   );
   assert.ok(result.logs.every((log) => log.service === service));
 }
+const socket = io(web, { transports: ['websocket'], reconnection: false, autoConnect: false, timeout: 5000 });
+try {
+  const connected = new Promise((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('connect_error', reject);
+  });
+  const notifications = new Set();
+  socket.on('logs:created', (event) => notifications.add(event.id));
+  socket.connect();
+  await connected;
+  const persisted = await post({ ...input, message: `${marker} socket proof` });
+  const socketDeadline = Date.now() + 5000;
+  while (!notifications.has(persisted.id) && Date.now() < socketDeadline) await delay(25);
+  assert.ok(notifications.has(persisted.id), 'persisted event notification over nginx WebSocket upgrade');
+} finally {
+  socket.disconnect();
+}
 console.log(
-  'PASS: HTTP ingestion, PostgreSQL filters, literal search, validation, generator and nginx proxy.',
+  'PASS: ingestion, PostgreSQL filters, cursor pagination, generator, nginx and Socket.io WebSocket.',
 );

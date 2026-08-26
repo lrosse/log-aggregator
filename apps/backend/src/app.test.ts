@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from './app.js';
 import type { LogRecord, LogRepository } from './types.js';
+import type { AddressInfo } from 'node:net';
+import { io as connect } from 'socket.io-client';
+import { createHttpServer } from './http.js';
 
 const input = {
   service: 'payments',
@@ -11,7 +14,8 @@ const input = {
 };
 const record: LogRecord = { ...input, id: '1', receivedAt: input.timestamp };
 const repository: LogRepository = { insert: vi.fn(), list: vi.fn(), services: vi.fn(), healthy: vi.fn() };
-const app = createApp(repository);
+const onStored = vi.fn();
+const app = createApp(repository, onStored);
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -27,6 +31,7 @@ describe('POST /logs', () => {
     expect(response.status).toBe(201);
     expect(response.body).toEqual(record);
     expect(repository.insert).toHaveBeenCalledWith(input);
+    expect(onStored).toHaveBeenCalledWith(record);
   });
   it.each([
     { level: 'debug' },
@@ -62,6 +67,7 @@ describe('POST /logs', () => {
     const response = await request(app).post('/logs').send(input);
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'Internal server error' });
+    expect(onStored).not.toHaveBeenCalled();
   });
 });
 
@@ -112,4 +118,55 @@ describe('read API', () => {
       expect((await request(app).get('/logs').query({ before })).status).toBe(400);
     },
   );
+});
+
+describe('Socket.io transport', () => {
+  it('notifies a WebSocket client after a successful insert', async () => {
+    const { server, io } = createHttpServer(repository, ['http://localhost:3000']);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const socket = connect(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
+      transports: ['websocket'],
+      reconnection: false,
+      autoConnect: false,
+      timeout: 1500,
+    });
+    try {
+      const connected = new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('connect_error', reject);
+      });
+      socket.connect();
+      await connected;
+      const notification = new Promise((resolve) => socket.once('logs:created', resolve));
+      expect((await request(server).post('/logs').send(input)).status).toBe(201);
+      expect(await notification).toEqual({ id: record.id });
+    } finally {
+      socket.disconnect();
+      await new Promise<void>((resolve) => {
+        void io.close(() => resolve());
+      });
+    }
+  });
+  it('rejects a WebSocket handshake from an untrusted browser origin', async () => {
+    const { server, io } = createHttpServer(repository, ['http://localhost:3000']);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const socket = connect(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
+      transports: ['websocket'],
+      reconnection: false,
+      autoConnect: false,
+      timeout: 1500,
+      extraHeaders: { Origin: 'https://untrusted.example' },
+    });
+    try {
+      const rejection = new Promise<Error>((resolve) => socket.once('connect_error', resolve));
+      socket.connect();
+      expect(await rejection).toBeInstanceOf(Error);
+      expect(socket.connected).toBe(false);
+    } finally {
+      socket.disconnect();
+      await new Promise<void>((resolve) => {
+        void io.close(() => resolve());
+      });
+    }
+  });
 });

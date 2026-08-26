@@ -3,39 +3,44 @@ import {
   ArrowDown,
   ArrowUpRight,
   Check,
+  ChevronLeft,
   ChevronRight,
   Code2,
   Database,
   Layers3,
   ListFilter,
+  Pause,
+  Play,
   Radio,
   RefreshCw,
   Search,
   Terminal,
   X,
 } from 'lucide-react';
-import {
-  emptyFilters,
-  formatTime,
-  queryString,
-  readJson,
-  summarize,
-  type Filters,
-  type Level,
-  type LogRecord,
-} from './api';
+import { emptyFilters, formatTime, summarize, type Filters, type Level, type LogRecord } from './api';
+import { useLogs } from './useLogs';
 
 const levels: Level[] = ['info', 'warn', 'error'];
 
 export function App() {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [query, setQuery] = useState('');
-  const [logs, setLogs] = useState<LogRecord[]>([]);
-  const [services, setServices] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [revision, setRevision] = useState(0);
-  const [updated, setUpdated] = useState<string | null>(null);
+  const {
+    logs,
+    services,
+    loading,
+    error,
+    updated,
+    live,
+    connection,
+    page,
+    nextCursor,
+    older,
+    newer,
+    resume,
+    pause,
+    refresh,
+  } = useLogs(filters);
   const [selected, setSelected] = useState<LogRecord | null>(null);
   const [showApi, setShowApi] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -51,30 +56,6 @@ export function App() {
     );
     return () => clearTimeout(timer);
   }, [query]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    void Promise.all([
-      readJson<{ logs: LogRecord[] }>(`/logs?${queryString(filters)}`, controller.signal),
-      readJson<{ services: string[] }>('/services', controller.signal),
-    ])
-      .then(([data, sources]) => {
-        if (controller.signal.aborted) return;
-        setLogs(data.logs);
-        setServices(sources.services);
-        setUpdated(new Date().toISOString());
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : 'Unable to load logs.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [filters, revision]);
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -228,15 +209,37 @@ export function App() {
               <div>
                 <Radio size={16} />
                 <h2>Event stream</h2>
-                <span className="badge">{loading ? 'LOADING' : 'SNAPSHOT'}</span>
+                <span
+                  className={`badge ${live && connection === 'connected' && !error ? 'badge-live' : ''}`}
+                  role="status"
+                >
+                  {loading
+                    ? 'LOADING'
+                    : error
+                      ? 'UNAVAILABLE'
+                      : !live
+                        ? 'PAUSED'
+                        : connection === 'connected'
+                          ? 'LIVE'
+                          : connection.toUpperCase()}
+                </span>
               </div>
-              <button
-                className="button small"
-                onClick={() => setRevision((value) => value + 1)}
-                disabled={loading}
-              >
-                <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
-              </button>
+              <div className="stream-actions">
+                <button className="button small" onClick={live ? pause : resume}>
+                  {live ? (
+                    <>
+                      <Pause size={13} /> Pause live
+                    </>
+                  ) : (
+                    <>
+                      <Play size={13} /> Resume live
+                    </>
+                  )}
+                </button>
+                <button className="button small" onClick={refresh} disabled={loading}>
+                  <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+                </button>
+              </div>
             </div>
             <div className="filters">
               <label className="search-field">
@@ -300,7 +303,7 @@ export function App() {
               <div role="alert" className="state error-state">
                 <strong>Connection interrupted</strong>
                 <p>{error}</p>
-                <button className="button" onClick={() => setRevision((value) => value + 1)}>
+                <button className="button" onClick={refresh}>
                   Try again
                 </button>
               </div>
@@ -382,7 +385,25 @@ export function App() {
                 <span className={`status-dot ${error ? 'offline' : ''}`} />
                 {error ? 'Backend unavailable' : loading ? 'Fetching events' : `${logs.length} events loaded`}
               </span>
-              <span>100 events per window · Refresh to sync</span>
+              <div className="pagination">
+                <span>Page {page}</span>
+                <button
+                  className="button small"
+                  onClick={newer}
+                  disabled={loading || page === 1 || !!error}
+                  aria-label="Newer logs"
+                >
+                  <ChevronLeft size={13} /> Newer
+                </button>
+                <button
+                  className="button small"
+                  onClick={older}
+                  disabled={loading || !nextCursor || !!error}
+                  aria-label="Older logs"
+                >
+                  Older <ChevronRight size={13} />
+                </button>
+              </div>
             </div>
           </section>
           <footer className="page-footer">
