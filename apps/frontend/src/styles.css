@@ -730,6 +730,9 @@ td:last-child {
 .error-state strong {
   color: var(--error);
 }
+.loading-state > svg {
+  color: var(--accent);
+}
 .detail-dialog {
   background: #1b2118;
   color: #dce3d3;

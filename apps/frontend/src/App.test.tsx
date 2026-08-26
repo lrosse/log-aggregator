@@ -99,6 +99,38 @@ it('guides a workspace with no logs to the existing ingestion instructions', asy
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
+it('shows a busy loading state until the initial events arrive', async () => {
+  let resolveLogs: (value: unknown) => void = () => {};
+  fetchMock.mockImplementation(async (path: string) => {
+    if (path.includes('/services')) return { ok: true, json: async () => ({ services: ['payments'] }) };
+    return new Promise((resolve) => {
+      resolveLogs = resolve;
+    });
+  });
+  render(<App />);
+  expect(screen.getByRole('region', { name: 'Loading logs' }).getAttribute('aria-busy')).toBe('true');
+  expect(screen.getByText('Loading your logs…')).toBeTruthy();
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(screen.queryByText('No logs received yet')).toBeNull();
+  expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => {
+    resolveLogs({ ok: true, json: async () => ({ logs: [log], nextCursor: null }) });
+  });
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  expect(screen.queryByRole('region', { name: 'Loading logs' })).toBeNull();
+});
+
+it('keeps existing rows visible during a manual refresh', async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole('button', { name: 'Payment timeout' });
+  fetchMock.mockImplementation(() => new Promise(() => {}));
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+  expect(screen.getByRole('status').textContent).toBe('LOADING');
+  expect(screen.getByRole('button', { name: 'Payment timeout' })).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Loading logs' })).toBeNull();
+});
+
 it('shows backend failures and retries successfully', async () => {
   fetchMock.mockRejectedValueOnce(new Error('Backend unreachable'));
   const user = userEvent.setup();

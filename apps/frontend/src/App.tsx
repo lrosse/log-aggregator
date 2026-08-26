@@ -9,6 +9,7 @@ import {
   Database,
   Layers3,
   ListFilter,
+  LoaderCircle,
   Pause,
   Play,
   Radio,
@@ -307,6 +308,35 @@ export function App() {
                   Try again
                 </button>
               </div>
+            ) : loading && !logs.length ? (
+              <div className="state loading-state" role="region" aria-label="Loading logs" aria-busy="true">
+                <LoaderCircle size={27} className="spin" aria-hidden="true" />
+                <strong>Loading your logs…</strong>
+                <p>Fetching events and services from your workspace.</p>
+              </div>
+            ) : !logs.length ? (
+              <div
+                className="state"
+                role="region"
+                aria-label={active ? 'No matching events' : 'No logs received'}
+              >
+                <Terminal size={27} />
+                <strong>{active ? 'No matching events' : 'No logs received yet'}</strong>
+                <p>
+                  {active
+                    ? 'Try another search or clear your filters.'
+                    : 'Send a JSON event to POST /logs, or start the demo generator. Your events will appear here.'}
+                </p>
+                {active ? (
+                  <button className="button" onClick={clear}>
+                    Clear filters
+                  </button>
+                ) : (
+                  <button className="button" onClick={() => setShowApi(true)}>
+                    <Code2 size={15} /> Send your first log <ArrowUpRight size={14} />
+                  </button>
+                )}
+              </div>
             ) : (
               <div className={`table-scroll ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
                 <table>
@@ -356,37 +386,6 @@ export function App() {
                     ))}
                   </tbody>
                 </table>
-                {!logs.length && (
-                  <div
-                    className="state"
-                    role="region"
-                    aria-label={loading ? 'Loading logs' : active ? 'No matching events' : 'No logs received'}
-                  >
-                    <Terminal size={27} />
-                    <strong>
-                      {loading
-                        ? 'Connecting to your logs…'
-                        : active
-                          ? 'No matching events'
-                          : 'No logs received yet'}
-                    </strong>
-                    <p>
-                      {active
-                        ? 'Try another search or clear your filters.'
-                        : 'Send a JSON event to POST /logs, or start the demo generator. Your events will appear here.'}
-                    </p>
-                    {active && (
-                      <button className="button" onClick={clear}>
-                        Clear filters
-                      </button>
-                    )}
-                    {!loading && !active && (
-                      <button className="button" onClick={() => setShowApi(true)}>
-                        <Code2 size={15} /> Send your first log <ArrowUpRight size={14} />
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
             )}
             <div className="table-footer">
