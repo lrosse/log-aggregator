@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Layers icon from Lucide (ISC); see lucide-license.txt. -->
+  <rect width="32" height="32" rx="6" fill="#171a17" />
+  <g transform="translate(4 4)" fill="none" stroke="#e4ac72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m12 2-10 5 10 5 10-5-10-5Z" />
+    <path d="m2 12 10 5 10-5M2 17l10 5 10-5" />
+  </g>
+</svg>

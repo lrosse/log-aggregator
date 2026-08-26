@@ -40,7 +40,13 @@ async function post(body, expected = 201) {
 }
 assert.equal((await get('/health')).status, 'ok');
 assert.equal((await fetch(`${web}/api/health`)).status, 200, 'nginx API proxy');
-assert.match(await (await fetch(web)).text(), /Log Aggregator/);
+const html = await (await fetch(web)).text();
+assert.match(html, /<title>Log Aggregator · Explorer<\/title>/);
+assert.match(html, /rel="icon"[^>]+href="\/favicon\.svg"/);
+const favicon = await fetch(`${web}/favicon.svg`);
+assert.equal(favicon.status, 200, 'favicon is served');
+assert.match(favicon.headers.get('content-type'), /image\/svg\+xml/);
+assert.match(await favicon.text(), /<svg/);
 
 const input = {
   service: 'payments',
