@@ -6,7 +6,7 @@
 
 When a request crosses an API gateway, an identity provider, a payment service and a worker, opening four terminals is a poor debugging workflow. Log Aggregator gives those services one HTTP ingestion endpoint and one searchable timeline, backed by PostgreSQL.
 
-![Log explorer showing generated service logs](docs/dashboard.png)
+![Log explorer showing generated service logs](docs/dashboard.jpg)
 
 ## Run in one command
 
@@ -51,6 +51,8 @@ docker compose down                # Stop containers; preserve stored logs
 - Event timestamps are displayed in UTC. Ordering uses the ingestion ID, so delayed events appear at the top.
 
 Live mode updates automatically through Socket.io. **Pause live** freezes the view for investigation; **Older** and **Newer** navigate 100-event cursor pages. Paging automatically pauses streaming. **Resume live** returns to the latest page and catches up. Changing filters resets the page history.
+
+New workspaces show first-log instructions; a loading indicator stays visible until the initial fetch completes. At tablet widths, metrics use two columns and the table scrolls horizontally inside its own region. Filters and ingestion instructions remain available when the sidebar is hidden. See the [768 px dashboard](docs/dashboard-tablet.jpg) and [empty workspace](docs/empty-state-tablet.jpg).
 
 The Docker MVP is preserved at tag [`v0.1.0`](https://github.com/lrosse/log-aggregator/tree/v0.1.0). Streaming and pagination were added only after that milestone was running, browser-verified and committed.
 
@@ -173,7 +175,7 @@ The smoke test inserts marked synthetic events into the existing demo services a
 
 See the [verification record](docs/verification.md) for the browser, persistence and restart checks and the limits of what was tested.
 
-The automated tests cover ingest validation, malformed/oversized requests, safe errors, database readiness, SQL parameters, literal search, cursor bounds, actual WebSocket delivery/origin rejection, combined UI filters, first-log guidance, loading states, empty results, retry, live updates, reconnect reconciliation, stale-request cancellation, pagination resets and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering across numeric ID boundaries, pagination during new arrivals, all four generated services, health responses, page metadata, the favicon and Socket.io over the nginx WebSocket proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
+The automated tests cover ingest validation, malformed/oversized requests, rate-limit enforcement and window renewal, safe errors, database readiness, SQL parameters, literal search, cursor bounds, actual WebSocket delivery/origin rejection, combined UI filters, first-log guidance, loading states, empty results, retry, live updates, reconnect reconciliation, stale-request cancellation, pagination resets and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering across numeric ID boundaries, pagination during new arrivals, all four generated services, health responses, rate-limit headers, page metadata, the favicon and Socket.io over the nginx WebSocket proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
 
 For frontend hot reload, keep the Compose API on port 3001 and run `npm run dev -w @log-aggregator/frontend`, then open [localhost:5173](http://localhost:5173). Vite proxies `/api` to the backend. For backend-only development, set `DATABASE_URL` to your development PostgreSQL instance and run `npm run dev -w @log-aggregator/backend`; migrations run on startup.
 

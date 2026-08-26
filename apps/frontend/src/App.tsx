@@ -338,8 +338,14 @@ export function App() {
                 )}
               </div>
             ) : (
-              <div className={`table-scroll ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
-                <table>
+              <div
+                className={`table-scroll ${loading ? 'is-loading' : ''}`}
+                role="region"
+                aria-label="Event table"
+                tabIndex={0}
+                aria-busy={loading}
+              >
+                <table aria-label="Log events">
                   <thead>
                     <tr>
                       <th className="level-column">LEVEL</th>
