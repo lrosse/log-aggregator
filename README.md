@@ -50,7 +50,9 @@ docker compose down                # Stop containers; preserve stored logs
 - Metrics describe the **displayed window**, not total database volume.
 - Event timestamps are displayed in UTC. Ordering uses the ingestion ID, so delayed events appear at the top.
 
-The MVP displays up to 100 matching events and refreshes explicitly. Socket.io streaming and cursor pagination are the next milestone, gated on successful Docker MVP verification.
+Live mode updates automatically through Socket.io. **Pause live** freezes the view for investigation; **Older** and **Newer** navigate 100-event cursor pages. Paging automatically pauses streaming. **Resume live** returns to the latest page and catches up. Changing filters resets the page history.
+
+The Docker MVP is preserved at tag [`v0.1.0`](https://github.com/lrosse/log-aggregator/tree/v0.1.0). Streaming and pagination were added only after that milestone was running, browser-verified and committed.
 
 ## Architecture
 
@@ -61,15 +63,17 @@ flowchart LR
   A -->|Parameterized SQL| P[(PostgreSQL)]
   B[React dashboard] -->|Same-origin /api| N[nginx]
   N --> A
+  A -->|Socket.io notification via nginx| B
 ```
 
-| Layer    | Stack                                                                            |
-| -------- | -------------------------------------------------------------------------------- |
-| Backend  | Node.js 24 LTS, TypeScript 5.9, Express 5, Zod, node-postgres, Helmet            |
-| Database | PostgreSQL 17, SQL migrations, `pg_trgm`                                         |
-| Frontend | React 19, TypeScript, Vite, custom CSS, Lucide icons, self-hosted IBM Plex fonts |
-| Runtime  | Multi-stage Docker builds, Docker Compose, unprivileged nginx                    |
-| Quality  | ESLint 10, Prettier, Vitest, Supertest, React Testing Library, GitHub Actions    |
+| Layer     | Stack                                                                            |
+| --------- | -------------------------------------------------------------------------------- |
+| Backend   | Node.js 24 LTS, TypeScript 5.9, Express 5, Zod, node-postgres, Helmet            |
+| Database  | PostgreSQL 17, SQL migrations, `pg_trgm`                                         |
+| Real-time | Socket.io 4, WebSocket upgrade through nginx, reconnect reconciliation           |
+| Frontend  | React 19, TypeScript, Vite, custom CSS, Lucide icons, self-hosted IBM Plex fonts |
+| Runtime   | Multi-stage Docker builds, Docker Compose, unprivileged nginx                    |
+| Quality   | ESLint 10, Prettier, Vitest, Supertest, React Testing Library, GitHub Actions    |
 
 ### Decisions and tradeoffs
 
@@ -77,6 +81,8 @@ flowchart LR
 - **PostgreSQL instead of a search cluster.** Relational storage is sufficient for a portfolio workload and simple to operate. Composite service/ID and level/ID indexes support filters; a trigram GIN index supports substring search. Short searches may still scan many rows.
 - **Migrate before readiness.** Ordered SQL migrations execute in a transaction protected by an advisory lock. A named volume persists data. Health checks and `service_healthy` dependencies prevent startup races; see [Docker's startup-order documentation](https://docs.docker.com/compose/how-tos/startup-order/).
 - **Acknowledge after persistence.** `201 Created` means the insert succeeded. The sender supplies event time; PostgreSQL records `receivedAt`. IDs are strings to avoid JavaScript integer precision loss.
+- **Socket.io rather than periodic polling.** A persisted insert sends a lightweight `logs:created` notification containing its ID. The browser coalesces notifications for 350 ms and serializes HTTP reads to avoid overlapping requests. PostgreSQL remains the authority for filters; inactive sources do not cause a polling loop. Socket.io reconnects automatically, and each connection/resume reloads the latest matching window. Notifications are not durable or guaranteed; see [Socket.io delivery guarantees](https://socket.io/docs/v4/delivery-guarantees/). Older missed records remain available through pagination, not an unlimited in-memory replay.
+- **Keyset rather than offset pagination.** `before=<id>` queries use `logs.id < cursor` and numeric descending order. New arrivals do not shift older pages. This is not a transactionally frozen database snapshot, and multiple backend replicas would require shared notification fanout.
 - **Same-origin browser traffic.** nginx forwards `/api` to the backend without permissive CORS. Docker DNS is re-resolved so the proxy survives backend container recreation.
 - **Dense, restrained UI.** Charcoal/olive neutrals, amber accents, semantic severity colors, compact rows, a native keyboard-accessible dialog and locally served typography. No external fonts or analytics requests.
 - **Local exposure.** Published ports bind to `127.0.0.1`; PostgreSQL has no host port. Backend, generator and nginx processes run without root privileges.
@@ -100,7 +106,7 @@ $event = @{
   message = 'Payment authorized'
   timestamp = [DateTime]::UtcNow.ToString('o')
 } | ConvertTo-Json
-Invoke-RestMethod http://localhost:3001/logs -Method Post -ContentType 'application/json' -Body $event
+Invoke-RestMethod http://127.0.0.1:3001/logs -Method Post -ContentType 'application/json' -Body $event
 ```
 
 | Required field | Rules                                                                                  |
@@ -118,7 +124,7 @@ Unknown fields and invalid input return `400`; non-JSON content returns `415`; b
 GET /logs?service=payments&level=error&q=timeout&limit=50
 ```
 
-Filters are optional and combined with AND. `limit` defaults to 100 and accepts integers from 1 to 200. Responses contain `{ "logs": [...] }`, newest ingestion first. Each record adds string `id` and UTC `receivedAt` to the input fields. SQL parameters and escaped LIKE metacharacters protect search queries.
+Filters are optional and combined with AND. `limit` defaults to 100 and accepts integers from 1 to 200. Responses contain `{ "logs": [...], "nextCursor": "123" }`, newest ingestion first. Request the next page with `before=123`, keeping the same filters and limit. `nextCursor: null` means there are no older matching records. Cursors are positive PostgreSQL BIGINT strings, never floating-point numbers. Each record adds string `id` and UTC `receivedAt` to the input fields. SQL parameters and escaped LIKE metacharacters protect search queries.
 
 `GET /services` returns `{ "services": ["api-gateway", ...] }` alphabetically. `GET /health` returns `200 {"status":"ok"}` only when the logs table is reachable, otherwise `503`.
 
@@ -135,6 +141,8 @@ Copy `.env.example` to `.env` only to change defaults. Compose reads it automati
 
 Compose supplies backend `DATABASE_URL`/`PORT` and generator `API_URL`. No secrets are compiled into the frontend. Changing the password after database initialization does not change the stored PostgreSQL role; update it explicitly or intentionally recreate a disposable volume.
 
+Compose also sets `ALLOWED_ORIGINS` for Socket.io to the configured local dashboard port and the Vite development port. Non-browser clients may omit `Origin`; unlisted browser origins are rejected at the handshake. For a backend run outside Compose, configure this comma-separated origin list yourself if needed. An origin allowlist is not authentication.
+
 ## Development and verification
 
 For host-side checks, install Node.js 24 and npm:
@@ -149,7 +157,9 @@ npm run smoke          # Real PostgreSQL + HTTP + nginx + generated services
 
 The smoke test inserts marked synthetic events into the existing demo services and never deletes data. Set `SMOKE_API_URL`/`SMOKE_WEB_URL` for custom ports.
 
-Tests cover ingest validation, malformed/oversized requests, safe errors, SQL parameters, literal search, combined UI filters, empty results, retry after connection failure and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering, all four generated services and the nginx proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
+See the [verification record](docs/verification.md) for the browser, persistence and restart checks and the limits of what was tested.
+
+The 47 tests cover ingest validation, malformed/oversized requests, safe errors, SQL parameters, literal search, cursor bounds, actual WebSocket delivery/origin rejection, combined UI filters, empty results, retry, live updates, reconnect reconciliation, stale-request cancellation, pagination resets and deterministic generator scenarios. The smoke test checks real persistence, combined filters, timestamp normalization, ordering across numeric ID boundaries, pagination during new arrivals, all four generated services and Socket.io over the nginx WebSocket proxy. CI repeats formatting, lint, tests, builds and Compose smoke checks on a clean Linux runner.
 
 For frontend hot reload, keep the Compose API on port 3001 and run `npm run dev -w @log-aggregator/frontend`, then open [localhost:5173](http://localhost:5173). Vite proxies `/api` to the backend. For backend-only development, set `DATABASE_URL` to your development PostgreSQL instance and run `npm run dev -w @log-aggregator/backend`; migrations run on startup.
 
