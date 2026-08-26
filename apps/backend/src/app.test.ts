@@ -71,6 +71,69 @@ describe('POST /logs', () => {
   });
 });
 
+describe('ingestion rate limit', () => {
+  it('rejects requests over the budget before storing or broadcasting them', async () => {
+    const limited = createApp(repository, onStored, { windowMs: 60_000, limit: 2 });
+    expect((await request(limited).post('/logs').send(input)).status).toBe(201);
+    const lastAllowed = await request(limited).post('/logs').send(input);
+    expect(lastAllowed.status).toBe(201);
+    expect(lastAllowed.headers.ratelimit).toMatch(/remaining=0/);
+    const response = await request(limited).post('/logs').send(input);
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({
+      error: 'Ingestion rate limit exceeded. Retry after the Retry-After interval.',
+    });
+    expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+    expect(Number(response.headers['retry-after'])).toBeLessThanOrEqual(60);
+    expect(response.headers['ratelimit-policy']).toBe('2;w=60');
+    expect(repository.insert).toHaveBeenCalledTimes(2);
+    expect(onStored).toHaveBeenCalledTimes(2);
+  });
+  it('counts invalid requests and limits before parsing the body', async () => {
+    const limited = createApp(repository, onStored, { windowMs: 60_000, limit: 1 });
+    expect((await request(limited).post('/logs').type('json').send('{broken')).status).toBe(400);
+    expect((await request(limited).post('/logs').type('json').send('{broken')).status).toBe(429);
+    expect(repository.insert).not.toHaveBeenCalled();
+  });
+  it('does not allow forwarded headers to bypass the shared budget', async () => {
+    const limited = createApp(repository, onStored, { windowMs: 60_000, limit: 1 });
+    expect(
+      (await request(limited).post('/logs').set('X-Forwarded-For', '192.0.2.1').send(input)).status,
+    ).toBe(201);
+    expect(
+      (
+        await request(limited)
+          .post('/logs')
+          .set('X-Forwarded-For', '198.51.100.2')
+          .set('Forwarded', 'for=198.51.100.2')
+          .send(input)
+      ).status,
+    ).toBe(429);
+  });
+  it('leaves query, services and health endpoints available after exhaustion', async () => {
+    const limited = createApp(repository, onStored, { windowMs: 60_000, limit: 1 });
+    await request(limited).post('/logs').send(input);
+    expect((await request(limited).post('/logs').send(input)).status).toBe(429);
+    for (const path of ['/logs', '/services', '/health']) {
+      const response = await request(limited).get(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.ratelimit).toBeUndefined();
+    }
+  });
+  it('accepts ingestion again after the window expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const limited = createApp(repository, onStored, { windowMs: 60_000, limit: 1 });
+      expect((await request(limited).post('/logs').send(input)).status).toBe(201);
+      expect((await request(limited).post('/logs').send(input)).status).toBe(429);
+      vi.setSystemTime(Date.now() + 60_001);
+      expect((await request(limited).post('/logs').send(input)).status).toBe(201);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('GET /health', () => {
   it('confirms API and PostgreSQL readiness without caching the result', async () => {
     const response = await request(app).get('/health');

@@ -1,14 +1,28 @@
 import express, { type ErrorRequestHandler } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { ZodError } from 'zod';
 import type { LogRecord, LogRepository } from './types.js';
 import { logFilterSchema, logInputSchema } from './validation.js';
 
-export function createApp(repository: LogRepository, onStored: (log: LogRecord) => void = () => {}) {
+export function createApp(
+  repository: LogRepository,
+  onStored: (log: LogRecord) => void = () => {},
+  ingestionPolicy = { windowMs: 60_000, limit: 600 },
+) {
   const app = express();
+  const ingestionLimiter = rateLimit({
+    windowMs: ingestionPolicy.windowMs,
+    limit: ingestionPolicy.limit,
+    // One process-wide budget protects storage through both direct HTTP and nginx.
+    // Never use untrusted forwarded IP headers to create fresh quota buckets.
+    keyGenerator: () => 'logs-ingestion',
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Ingestion rate limit exceeded. Retry after the Retry-After interval.' },
+  });
   app.disable('x-powered-by');
   app.use(helmet());
-  app.use(express.json({ limit: '16kb' }));
   app.get('/health', async (_request, response) => {
     const healthy = await repository.healthy();
     response
@@ -16,7 +30,7 @@ export function createApp(repository: LogRepository, onStored: (log: LogRecord) 
       .status(healthy ? 200 : 503)
       .json({ status: healthy ? 'ok' : 'unavailable', db: healthy ? 'connected' : 'disconnected' });
   });
-  app.post('/logs', async (request, response) => {
+  app.post('/logs', ingestionLimiter, express.json({ limit: '16kb' }), async (request, response) => {
     if (!request.is('application/json')) {
       response.status(415).json({ error: 'Content-Type must be application/json' });
       return;

@@ -36,6 +36,8 @@ async function post(body, expected = 201) {
     signal: AbortSignal.timeout(10000),
   });
   assert.equal(response.status, expected, 'POST /logs');
+  assert.equal(response.headers.get('ratelimit-policy'), '600;w=60', 'ingestion budget');
+  assert.match(response.headers.get('ratelimit'), /limit=600, remaining=\d+, reset=\d+/);
   return response.json();
 }
 assert.deepEqual(await get('/health'), { status: 'ok', db: 'connected' });

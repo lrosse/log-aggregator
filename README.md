@@ -134,6 +134,14 @@ Filters are optional and combined with AND. `limit` defaults to 100 and accepts 
 
 Use [localhost:3001/health](http://localhost:3001/health) directly or `/api/health` through the dashboard's nginx proxy. Docker Compose uses this readiness endpoint to coordinate startup and monitor the API.
 
+### Ingestion rate limit
+
+`POST /logs` accepts up to **600 requests per 60-second window per backend process**, shared by all senders, including the demo generator. Direct API traffic and nginx `/api/logs` traffic consume the same budget; changing IP or forwarded headers cannot create a new allowance. All ingestion attempts count, including invalid payloads, and limiting runs before JSON parsing. Read endpoints and `/health` are not limited.
+
+Excess requests return **429** with a JSON `error` and `Retry-After` in seconds. Ingestion responses expose `RateLimit` and `RateLimit-Policy` headers. Wait for the indicated interval before retrying. The default generator sends roughly 92 events per minute, leaving room for manual ingestion and smoke tests.
+
+The [express-rate-limit middleware](https://express-rate-limit.mintlify.app/reference/configuration) uses an in-memory counter that resets on process restart. This is a basic storage safeguard, not a per-tenant quota or DDoS defense: one sender can consume the shared allowance. Multiple replicas would need a shared store and a deliberate global/per-client policy.
+
 ## Configuration
 
 Copy `.env.example` to `.env` only to change defaults. Compose reads it automatically; Git ignores it.
@@ -171,6 +179,6 @@ For frontend hot reload, keep the Compose API on port 3001 and run `npm run dev 
 
 ## Scope and production considerations
 
-This is a portfolio project, **not a production log platform**. It has no authentication, tenant isolation, rate limiting, redaction, retention policy, durable queue or high availability. Do not send real secrets or sensitive production logs, and do not expose it publicly. Storage grows until you remove events or recreate the volume. HTTP retries can create duplicates; ingestion does not claim exactly-once delivery. A production evolution would add authentication/TLS, quotas, retention partitions, idempotency, backups, monitoring and load testing.
+This is a portfolio project, **not a production log platform**. It has basic ingestion rate limiting but no authentication, tenant isolation, redaction, retention policy, durable queue or high availability. Do not send real secrets or sensitive production logs, and do not expose it publicly. Storage grows until you remove events or recreate the volume. HTTP retries can create duplicates; ingestion does not claim exactly-once delivery. A production evolution would add authentication/TLS, tenant quotas, retention partitions, idempotency, backups, monitoring and load testing.
 
 The generator favors readable scenarios over throughput benchmarking and backs off when ingestion fails. Its four source names are simulations, not four additional application containers.
