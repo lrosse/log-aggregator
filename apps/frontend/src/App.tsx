@@ -357,23 +357,32 @@ export function App() {
                   </tbody>
                 </table>
                 {!logs.length && (
-                  <div className="state">
+                  <div
+                    className="state"
+                    role="region"
+                    aria-label={loading ? 'Loading logs' : active ? 'No matching events' : 'No logs received'}
+                  >
                     <Terminal size={27} />
                     <strong>
                       {loading
                         ? 'Connecting to your logs…'
                         : active
                           ? 'No matching events'
-                          : 'Ready for your first event'}
+                          : 'No logs received yet'}
                     </strong>
                     <p>
                       {active
                         ? 'Try another search or clear your filters.'
-                        : 'Start the generator or send a log to POST /logs.'}
+                        : 'Send a JSON event to POST /logs, or start the demo generator. Your events will appear here.'}
                     </p>
                     {active && (
                       <button className="button" onClick={clear}>
                         Clear filters
+                      </button>
+                    )}
+                    {!loading && !active && (
+                      <button className="button" onClick={() => setShowApi(true)}>
+                        <Code2 size={15} /> Send your first log <ArrowUpRight size={14} />
                       </button>
                     )}
                   </div>

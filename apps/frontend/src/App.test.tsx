@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 
@@ -76,9 +76,27 @@ it('shows an empty state and lets the user reset filters', async () => {
   await screen.findByRole('button', { name: 'Payment timeout' });
   await user.type(screen.getByLabelText('Search log messages'), 'missing');
   await screen.findByText('No matching events');
+  expect(screen.queryByText('No logs received yet')).toBeNull();
   await user.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]!);
   await screen.findByRole('button', { name: 'Payment timeout' });
   expect((screen.getByLabelText('Search log messages') as HTMLInputElement).value).toBe('');
+});
+
+it('guides a workspace with no logs to the existing ingestion instructions', async () => {
+  fetchMock.mockImplementation(async (path: string) => ({
+    ok: true,
+    json: async () => (path.includes('/services') ? { services: [] } : { logs: [], nextCursor: null }),
+  }));
+  const user = userEvent.setup();
+  render(<App />);
+  const empty = await screen.findByRole('region', { name: 'No logs received' });
+  expect(empty.textContent).toContain('No logs received yet');
+  expect(empty.textContent).toContain('POST /logs');
+  await user.click(within(empty).getByRole('button', { name: 'Send your first log' }));
+  const instructions = await screen.findByRole('dialog', { name: 'Connect a service' });
+  expect(instructions.textContent).toContain('curl -X POST');
+  await user.click(within(instructions).getByRole('button', { name: 'Close dialog' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
 });
 
 it('shows backend failures and retries successfully', async () => {
